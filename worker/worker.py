@@ -2,8 +2,8 @@ import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'app'))
 
-from database import SessionLocal, redis_client
-from models import Task
+from app.database import SessionLocal, redis_client
+from app.models import Task 
 import time
 
 def process_task(payload: str) -> str:
