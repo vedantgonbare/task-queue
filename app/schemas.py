@@ -11,6 +11,7 @@ class TaskResponse(BaseModel):
     status: str
     payload: str
     result: Optional[str] = None
+    retry_count: int = 0
     created_at: datetime
 
     class Config:
