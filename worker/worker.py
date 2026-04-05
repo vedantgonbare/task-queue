@@ -5,14 +5,24 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from app.database import SessionLocal, redis_client
 from app.models import Task
 import time
+import json
 
 QUEUE_NAME = "task_queue"
 DEAD_LETTER_QUEUE = "dead_letter_queue"
+WS_CHANNEL = "task_updates"
 MAX_RETRIES = 3
 
+def publish_update(task_id: str, status: str, retry_count: int = 0):
+    """Publish task status update to Redis channel for WebSocket broadcast"""
+    message = json.dumps({
+        "type": "task_update",
+        "task_id": task_id,
+        "status": status,
+        "retry_count": retry_count
+    })
+    redis_client.publish(WS_CHANNEL, message)
+
 def process_task(payload: str) -> str:
-    # Simulate a task that randomly fails
-    # We'll force a failure if payload contains "fail"
     if "fail" in payload.lower():
         raise Exception(f"Simulated failure for payload: {payload}")
     time.sleep(2)
@@ -42,18 +52,17 @@ def run_worker():
                 print(f"[Worker {worker_id}] Task {task_id} not found. Skipping.")
                 continue
 
-            # Mark as processing
             task.status = "processing"
             db.commit()
+            publish_update(task_id, "processing", task.retry_count)
             print(f"[Worker {worker_id}] Task {task_id} → processing")
 
-            # Do the actual work (may raise Exception)
             result = process_task(task.payload)
 
-            # Success!
             task.status = "done"
             task.result = result
             db.commit()
+            publish_update(task_id, "done", task.retry_count)
             print(f"[Worker {worker_id}] Task {task_id} → done ✓")
 
         except Exception as e:
@@ -64,26 +73,22 @@ def run_worker():
                 db.commit()
 
                 if task.retry_count < MAX_RETRIES:
-                    # Calculate wait time: 2^retry_count seconds
-                    # retry 1 = wait 2s, retry 2 = wait 4s, retry 3 = wait 8s
                     wait_time = 2 ** task.retry_count
                     print(f"[Worker {worker_id}] Retry {task.retry_count}/{MAX_RETRIES} in {wait_time}s...")
+                    publish_update(task_id, f"retry_{task.retry_count}", task.retry_count)
                     time.sleep(wait_time)
 
-                    # Re-queue the task ID back into Redis
                     task.status = "pending"
                     db.commit()
                     redis_client.rpush(QUEUE_NAME, str(task.id))
-                    print(f"[Worker {worker_id}] Task {task_id} re-queued for retry")
 
                 else:
-                    # Max retries exceeded → dead letter queue
                     task.status = "failed"
                     task.result = f"Failed after {MAX_RETRIES} retries. Last error: {str(e)}"
                     db.commit()
-
+                    publish_update(task_id, "failed", task.retry_count)
                     redis_client.rpush(DEAD_LETTER_QUEUE, str(task.id))
-                    print(f"[Worker {worker_id}] Task {task_id} → DEAD LETTER QUEUE after {MAX_RETRIES} retries")
+                    print(f"[Worker {worker_id}] Task {task_id} → DEAD LETTER QUEUE")
 
         finally:
             db.close()

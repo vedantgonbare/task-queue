@@ -4,6 +4,7 @@ from sqlalchemy.orm import sessionmaker
 import redis
 import os
 from dotenv import load_dotenv
+from typing import TYPE_CHECKING
 
 load_dotenv()
 
