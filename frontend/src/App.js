@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import './App.css';
+import TaskModal from './TaskModal';
 
 const API = 'http://localhost:8000';
-// const ws = 'ws://localhost:8000/ws';
 
 export default function App() {
   const [tasks, setTasks]           = useState([]);
@@ -13,9 +13,9 @@ export default function App() {
   const [payloadErr, setPayloadErr] = useState('');
   const [log, setLog]               = useState(['Waiting for events…']);
   const [time, setTime]             = useState('');
+  const [selectedId, setSelectedId] = useState(null);
   const wsRef = useRef(null);
 
-  // Clock
   useEffect(() => {
     const tick = () => setTime(new Date().toTimeString().slice(0, 8));
     tick();
@@ -23,7 +23,7 @@ export default function App() {
     return () => clearInterval(id);
   }, []);
 
-  const addLog = useCallback((msg, type = '') => {
+  const addLog = useCallback((msg) => {
     const ts = new Date().toTimeString().slice(0, 8);
     setLog(prev => {
       const clean = prev[0] === 'Waiting for events…' ? [] : prev;
@@ -31,74 +31,58 @@ export default function App() {
     });
   }, []);
 
-  // Load existing tasks
   const loadTasks = useCallback(async (base) => {
     try {
       const res  = await fetch(`${base}/tasks/`);
       const data = await res.json();
       setTasks(data.map(t => ({ id: t.id, payload: t.payload, status: t.status })));
-      addLog(`Loaded ${data.length} existing task(s)`, 'info');
+      addLog(`Loaded ${data.length} existing task(s)`);
     } catch {
-      addLog('Could not load tasks from GET /tasks/', '');
+      addLog('Could not load tasks from GET /tasks/');
     }
   }, [addLog]);
 
-  // WebSocket
   const connect = useCallback(() => {
     if (wsRef.current) wsRef.current.close();
     const wsUrl = endpoint.replace(/^http/, 'ws') + '/ws';
-    addLog(`Connecting to ${wsUrl}…`, 'info');
+    addLog(`Connecting to ${wsUrl}…`);
     const ws = new WebSocket(wsUrl);
-
-    ws.onopen = () => {
-      setConnected(true);
-      addLog('WebSocket connected ✓', 'success');
-      loadTasks(endpoint);
-    };
-
+    ws.onopen = () => { setConnected(true); addLog('WebSocket connected ✓'); loadTasks(endpoint); };
     ws.onmessage = (e) => {
       try {
-        const data = JSON.parse(e.data);
+        const data   = JSON.parse(e.data);
         const taskId = data.task_id || data.id;
         setTasks(prev => {
           const idx = prev.findIndex(t => t.id === taskId);
-          if (idx >= 0) {
-            const next = [...prev];
-            next[idx] = { ...next[idx], status: data.status };
-            return next;
-          }
+          if (idx >= 0) { const next = [...prev]; next[idx] = { ...next[idx], status: data.status }; return next; }
           return [{ id: taskId, payload: data.payload || '…', status: data.status || 'pending' }, ...prev];
         });
-        addLog(`Task #${taskId} → ${data.status}`, data.status === 'done' ? 'success' : 'info');
-      } catch {
-        addLog(`WS: ${e.data}`);
-      }
+        addLog(`Task #${taskId?.slice(0, 8)} → ${data.status}`);
+      } catch { addLog(`WS: ${e.data}`); }
     };
-
-    ws.onclose = () => { setConnected(false); addLog('WebSocket disconnected', 'error'); wsRef.current = null; };
-    ws.onerror = () => addLog('WebSocket error — is the server running?', 'error');
+    ws.onclose = () => { setConnected(false); addLog('WebSocket disconnected'); wsRef.current = null; };
+    ws.onerror = () => addLog('WebSocket error — is the server running?');
     wsRef.current = ws;
   }, [endpoint, addLog, loadTasks]);
 
-  // Dispatch
-  const dispatch = async () => {
+  const dispatch = async (overridePayload) => {
     setPayloadErr('');
+    const raw = overridePayload ?? payload;
     let obj;
-    try { obj = JSON.parse(payload); } catch { setPayloadErr('Invalid JSON'); return; }
-    addLog('Dispatching task…', 'info');
+    try { obj = JSON.parse(raw); } catch { setPayloadErr('Invalid JSON'); return; }
+    addLog('Dispatching task…');
     try {
-      const res  = await fetch(`${endpoint}/tasks/`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await fetch(`${endpoint}/tasks/`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ payload: JSON.stringify(obj) }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      setTasks(prev => [{ id: data.id, payload, status: data.status || 'pending' }, ...prev]);
-      addLog(`Task #${data.id} dispatched ✓`, 'success');
+      setTasks(prev => [{ id: data.id, payload: raw, status: data.status || 'pending' }, ...prev]);
+      addLog(`Task #${data.id?.slice(0, 8)} dispatched ✓`);
     } catch (err) {
       setPayloadErr(`Dispatch failed — ${err.message}`);
-      addLog(`Dispatch failed: ${err.message}`, 'error');
+      addLog(`Dispatch failed: ${err.message}`);
     }
   };
 
@@ -112,15 +96,14 @@ export default function App() {
 
   return (
     <div className="app">
+      {selectedId && (
+        <TaskModal taskId={selectedId} onClose={() => setSelectedId(null)} onRetry={(p) => dispatch(p)} />
+      )}
 
-      {/* ── Header ── */}
       <header className="header">
         <div className="logo-row">
           <div className="logo-icon">⚡</div>
-          <div>
-            <h1>TaskQueue</h1>
-            <p>Distributed Worker System</p>
-          </div>
+          <div><h1>TaskQueue</h1><p>Distributed Worker System</p></div>
         </div>
         <div className="header-right">
           <button className={`status-badge ${connected ? 'connected' : ''}`} onClick={connect}>
@@ -131,13 +114,12 @@ export default function App() {
         </div>
       </header>
 
-      {/* ── Stat Cards ── */}
       <div className="stat-grid">
         {[
-          { key: 'total',   label: 'TOTAL',   icon: '📋', color: 'purple' },
-          { key: 'pending', label: 'PENDING',  icon: '⏳', color: 'amber'  },
-          { key: 'running', label: 'RUNNING',  icon: '⚡', color: 'blue'   },
-          { key: 'done',    label: 'DONE',     icon: '✅', color: 'green'  },
+          { key: 'total',   label: 'TOTAL',  icon: '📋', color: 'purple' },
+          { key: 'pending', label: 'PENDING', icon: '⏳', color: 'amber'  },
+          { key: 'running', label: 'RUNNING', icon: '⚡', color: 'blue'   },
+          { key: 'done',    label: 'DONE',    icon: '✅', color: 'green'  },
         ].map(({ key, label, icon, color }) => (
           <div className={`stat-card ${color}`} key={key}>
             <span className="stat-icon">{icon}</span>
@@ -148,10 +130,7 @@ export default function App() {
         ))}
       </div>
 
-      {/* ── Main Grid ── */}
       <div className="main-grid">
-
-        {/* Task Feed */}
         <div className="panel">
           <div className="panel-title">
             Task Feed
@@ -159,11 +138,7 @@ export default function App() {
           </div>
           <div className="filter-row">
             {['all', 'pending', 'running', 'done'].map(f => (
-              <button
-                key={f}
-                className={`filter-btn ${filter === f ? 'active' : ''}`}
-                onClick={() => setFilter(f)}
-              >
+              <button key={f} className={`filter-btn ${filter === f ? 'active' : ''}`} onClick={() => setFilter(f)}>
                 {f.charAt(0).toUpperCase() + f.slice(1)}
               </button>
             ))}
@@ -175,66 +150,48 @@ export default function App() {
                 <span>No tasks yet.<br />Submit one to get started!</span>
               </div>
             ) : filtered.map(t => (
-              <div className="task-item" key={t.id}>
+              <div className="task-item clickable" key={t.id} onClick={() => setSelectedId(t.id)} title="Click to view details">
                 <span className={`task-dot ${t.status}`} />
-                <span className="task-payload">#{t.id} &nbsp;{t.payload}</span>
+                <span className="task-payload">#{t.id.slice(0, 8)} &nbsp;{t.payload}</span>
                 <span className={`task-tag ${t.status}`}>{t.status}</span>
+                <span className="task-arrow">›</span>
               </div>
             ))}
           </div>
         </div>
 
-        {/* Right column */}
         <div className="right-col">
-
-          {/* Submit Task */}
           <div className="panel">
             <div className="panel-title">Submit Task</div>
-
             <div className="field">
               <label className="field-label">API Endpoint</label>
               <div className="endpoint-row">
-                <input
-                  className="tq-input"
-                  value={endpoint}
-                  onChange={e => setEndpoint(e.target.value)}
-                />
+                <input className="tq-input" value={endpoint} onChange={e => setEndpoint(e.target.value)} />
                 <button className={`btn-connect ${connected ? 'connected' : ''}`} onClick={connect}>
                   {connected ? 'Connected' : 'Connect'}
                 </button>
               </div>
             </div>
-
             <div className="field">
               <label className="field-label">Payload (JSON)</label>
-              <textarea
-                className="tq-textarea"
-                value={payload}
-                onChange={e => setPayload(e.target.value)}
-                rows={4}
-              />
+              <textarea className="tq-textarea" value={payload} onChange={e => setPayload(e.target.value)} rows={4} />
               {payloadErr && <p className="err-msg">{payloadErr}</p>}
             </div>
-
-            <button className="btn-dispatch" onClick={dispatch}>
-              ⚡ Dispatch Task
-            </button>
+            <button className="btn-dispatch" onClick={() => dispatch()}>⚡ Dispatch Task</button>
           </div>
 
-          {/* Activity Log */}
           <div className="panel">
             <div className="panel-title">Activity Log</div>
             <div className="activity-log">
               {log.map((line, i) => (
                 <div key={i} className={`log-line ${
                   line.includes('✓') ? 'success' :
-                  line.includes('error') || line.includes('failed') || line.includes('disconnected') ? 'error' :
+                  line.includes('failed') || line.includes('disconnected') || line.includes('error') ? 'error' :
                   line.includes('Connecting') || line.includes('→') || line.includes('Loaded') ? 'info' : ''
                 }`}>{line}</div>
               ))}
             </div>
           </div>
-
         </div>
       </div>
     </div>

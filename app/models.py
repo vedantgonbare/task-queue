@@ -1,16 +1,19 @@
-from sqlalchemy import Column, String, DateTime, Text, Integer
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Column, String, DateTime
+from sqlalchemy.sql import func
 from app.database import Base
 import uuid
-from datetime import datetime
+
+def generate_uuid():
+    return str(uuid.uuid4())
 
 class Task(Base):
     __tablename__ = "tasks"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    status = Column(String, default="pending")
-    payload = Column(Text, nullable=False)
-    result = Column(Text, nullable=True)
-    retry_count = Column(Integer, default=0)  # NEW
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    id           = Column(String, primary_key=True, default=generate_uuid)
+    payload      = Column(String, nullable=False)
+    status       = Column(String, default="pending")
+    created_at   = Column(DateTime(timezone=True), server_default=func.now())
+
+    # NEW — stamp these in the worker
+    started_at   = Column(DateTime(timezone=True), nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)

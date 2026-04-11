@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import Task
@@ -19,7 +19,14 @@ def create_task(task: TaskCreate, db: Session = Depends(get_db)):
     r.rpush("task_queue", json.dumps({"id": db_task.id, "payload": db_task.payload}))
     return db_task
 
-# ADD THIS — React will call this on load to get existing tasks
 @router.get("/", response_model=list[TaskResponse])
 def get_all_tasks(db: Session = Depends(get_db)):
     return db.query(Task).order_by(Task.created_at.desc()).limit(50).all()
+
+# NEW — modal calls this when a task row is clicked
+@router.get("/{task_id}", response_model=TaskResponse)
+def get_task(task_id: str, db: Session = Depends(get_db)):
+    task = db.query(Task).filter(Task.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return task
