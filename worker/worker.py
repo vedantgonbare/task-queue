@@ -30,12 +30,12 @@ def process_task(task_data: dict):
 
         # Publish running status via Redis so WebSocket broadcasts it
         r.publish("task_updates", json.dumps({
-            "task_id": task.id,
+            "task_id": str(task.id),
             "status":  "running",
             "payload": task.payload,
         }))
 
-        print(f"[Worker {task.id[:8]}] Running…")
+        print(f"[Worker {str(task.id)[:8]}] Running...")
 
         # Simulate real work
         time.sleep(2)
@@ -47,12 +47,12 @@ def process_task(task_data: dict):
 
         # Publish done status
         r.publish("task_updates", json.dumps({
-            "task_id": task.id,
+            "task_id": str(task.id),
             "status":  "done",
             "payload": task.payload,
         }))
 
-        print(f"[Worker {task.id[:8]}] Done ✓")
+        print(f"[Worker {str(task.id)[:8]}] Done ✓")
 
     except Exception as e:
         # Mark as failed if anything goes wrong
@@ -61,7 +61,7 @@ def process_task(task_data: dict):
             task.completed_at = datetime.now(timezone.utc)
             db.commit()
             r.publish("task_updates", json.dumps({
-                "task_id": task.id,
+                "task_id": str(task.id),
                 "status":  "failed",
             }))
         print(f"[Worker] Error: {e}")
@@ -76,7 +76,7 @@ if __name__ == "__main__":
         if result:
             _, raw = result
             task_data = json.loads(raw)
-            print(f"[Worker] Picked up task {task_data['id'][:8]}…")
+            print(f"[Worker] Picked up task {str(task_data['id'])[:8]}...")
             process_task(task_data)
         else:
             print("[Worker] No tasks. Waiting…")

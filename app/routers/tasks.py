@@ -16,7 +16,12 @@ def create_task(task: TaskCreate, db: Session = Depends(get_db)):
     db.add(db_task)
     db.commit()
     db.refresh(db_task)
-    r.rpush("task_queue", json.dumps({"id": db_task.id, "payload": db_task.payload}))
+    # r.rpush("task_queue", json.dumps({"id": db_task.id, "payload": db_task.payload}))
+    # return db_task
+    r.rpush("task_queue", json.dumps({
+    "id": str(db_task.id),
+    "payload": db_task.payload
+}))
     return db_task
 
 @router.get("/", response_model=list[TaskResponse])

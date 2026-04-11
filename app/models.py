@@ -9,7 +9,7 @@ def generate_uuid():
 class Task(Base):
     __tablename__ = "tasks"
 
-    id           = Column(String, primary_key=True, default=generate_uuid)
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     payload      = Column(String, nullable=False)
     status       = Column(String, default="pending")
     created_at   = Column(DateTime(timezone=True), server_default=func.now())
