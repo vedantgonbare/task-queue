@@ -1,17 +1,13 @@
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
-import redis
 import os
-from dotenv import load_dotenv
-from typing import TYPE_CHECKING
 
-load_dotenv()
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres123@localhost:5432/taskqueue")
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql+psycopg2://postgres:postgres123@127.0.0.1:5432/taskqueue"
-)
+# Render gives postgres:// but SQLAlchemy needs postgresql://
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -23,10 +19,3 @@ def get_db():
         yield db
     finally:
         db.close()
-
-redis_client = redis.Redis(
-    host=os.getenv("REDIS_HOST", "127.0.0.1"),
-    port=int(os.getenv("REDIS_PORT", 6379)),
-    db=0,
-    decode_responses=True
-)

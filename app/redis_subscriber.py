@@ -1,11 +1,15 @@
 import asyncio
 import json
-from app.database import redis_client
+import redis
+import os
 from app.websocket_manager import manager
+
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 
 async def subscribe_to_updates():
     """Listen to Redis channel and broadcast to WebSocket clients"""
-    pubsub = redis_client.pubsub()
+    r = redis.from_url(REDIS_URL)
+    pubsub = r.pubsub()
     pubsub.subscribe("task_updates")
     print("[Redis Subscriber] Listening for task updates...")
 
