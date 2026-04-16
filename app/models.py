@@ -17,3 +17,4 @@ class Task(Base):
     # NEW — stamp these in the worker
     started_at   = Column(DateTime(timezone=True), nullable=True)
     completed_at = Column(DateTime(timezone=True), nullable=True)
+    
